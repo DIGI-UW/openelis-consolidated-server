@@ -44,7 +44,7 @@ services:
 
     db2.openelis.org:
         container_name: openelisglobal-database2 
-        image: itechuw/openelis-global-2-database:3.2.1.2
+        image: itechuw/openelis-global-2-database:3.2.1.3
         platform: linux/amd64
         ports:
             - "15433:5432"
@@ -69,7 +69,7 @@ services:
             
     oe2.openelis.org:
         container_name: openelisglobal-webapp2 
-        image: itechuw/openelis-global-2:develop 
+        image: itechuw/openelis-global-2:3.2.1.3
         platform: linux/amd64  
         depends_on:
             - db2.openelis.org
@@ -109,7 +109,7 @@ services:
             - source: common.properties
        
     frontend2.openelis.org:
-        image: itechuw/openelis-global-2-frontend:develop 
+        image: itechuw/openelis-global-2-frontend:3.2.1.3
         container_name: openelisglobal-front-end2
         platform: linux/amd64
         networks:
@@ -120,7 +120,7 @@ services:
         tty: true
 
     proxy2:
-        image: itechuw/openelis-global-2-proxy:3.2.1.2
+        image: itechuw/openelis-global-2-proxy:3.2.1.3
         container_name: openelisglobal-proxy2
         platform: linux/amd64
         ports:
