@@ -7,3 +7,10 @@ configs/openelis/database/data2/*
 configs/openelis/logs/oeLogs2/*
 configs/openelis/logs/tomcatLogs2/*
 configs/fhirpipes/dwh2/*
+configs/openelis/nce-attachments/*
+configs/openelis/nce-attachments2/*
+!configs/openelis/nce-attachments*/.gitignore
+**/*checksum*.properties
+**/*checksums*.properties
+configs/openelis/properties*/TotalSystemConfiguration.properties
+configs/openelis/properties*/ChangedSystemConfiguration.properties

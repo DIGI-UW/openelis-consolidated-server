@@ -28,23 +28,29 @@ x-loki-logging:
               - swarm_stack
 services:
     certs2:
-        container_name: oe-certs2 
+        container_name: oe-certs2
         image: itechuw/certgen:main
         platform: linux/amd64
         restart: "no"
+        # The image ships a keystore and truststore built with its own default
+        # passwords. ensure-stores.sh rebuilds them from the self-signed
+        # certificate whenever they do not open with the passwords in .env, so
+        # changing SSL_KEYSTORE_PASSWORD or SSL_TRUSTSTORE_PASSWORD there is enough.
         environment:
-            - KEYSTORE_PW="kspass"
-            - TRUSTSTORE_PW="tspass"
+            - KEYSTORE_PW=${SSL_KEYSTORE_PASSWORD}
+            - TRUSTSTORE_PW=${SSL_TRUSTSTORE_PASSWORD}
+        command: ["/bin/bash", "/opt/openelis/ensure-stores.sh"]
         networks:
             - openelis-network2
         volumes:
             -  key_trust-store-volume2:/etc/openelis-global
             -  keys-vol2:/etc/ssl/private/
             -  certs-vol2:/etc/ssl/certs/
+            - ./configs/openelis/certs/ensure-stores.sh:/opt/openelis/ensure-stores.sh:ro
 
     db2.openelis.org:
-        container_name: openelisglobal-database2 
-        image: itechuw/openelis-global-2-database:3.2.1.3
+        container_name: openelisglobal-database2
+        image: itechuw/openelis-global-2-database:3.3.0
         platform: linux/amd64
         ports:
             - "15433:5432"
@@ -68,15 +74,16 @@ services:
             retries: 10 
             
     oe2.openelis.org:
-        container_name: openelisglobal-webapp2 
-        image: itechuw/openelis-global-2:3.2.1.3
+        container_name: openelisglobal-webapp2
+        image: itechuw/openelis-global-2:3.3.0 
         platform: linux/amd64  
         depends_on:
-            - db2.openelis.org
-            - certs2
+            db2.openelis.org:
+                condition: service_started
+            certs2:
+                condition: service_completed_successfully
         ports:
-            # - "8080:8080"
-            - "8444:8443"
+            - "${OE2_WEBAPP_HTTPS_PORT:-8444}:8443"
         restart: always
         networks:
           openelis-network2:
@@ -92,36 +99,43 @@ services:
             - SSL_KEYSTORE_PASSWORD
             - SSL_TRUSTSTORE_PATH
             - SSL_TRUSTSTORE_PASSWORD
+             # Key for secrets stored in the database; installs that predate
+             # OE_ENCRYPTION_PASSWORD keep using the keystore password
+            - OE_ENCRYPTION_PASSWORD=${OE_ENCRYPTION_PASSWORD:-${SSL_KEYSTORE_PASSWORD}}
+             # No analyser Bridge in this setup
+            - ANALYZER_BRIDGE_URL=
         volumes:
             -  key_trust-store-volume2:/etc/openelis-global
             -  lucene_index-vol2:/var/lib/lucene_index
-            - ./configs/openelis/plugins/:/var/lib/openelis-global/plugins
             - ./configs/openelis/logs/oeLogs2:/var/lib/openelis-global/logs
             - ./configs/openelis/logs/tomcatLogs2/:/usr/local/tomcat/logs
-            - ./configs/openelis/properties/SystemConfiguration.properties:/var/lib/openelis-global/properties/SystemConfiguration.properties
+            - ./configs/openelis/properties2:/var/lib/openelis-global/properties
             - ./configs/openelis/analyzer/analyzer-test-map.csv:/var/lib/openelis-global/analyzer/analyzer-test-map.csv
             - ./configs/openelis/odoo/odoo-test-product-mapping.csv:/var/lib/openelis-global/odoo/odoo-test-product-mapping.csv
             - ./configs/openelis/programs/:/var/lib/openelis-global/programs
             - ./configs/openelis/configuration:/var/lib/openelis-global/configuration
             - ./configs/openelis/menu/menu_config.json:/var/lib/openelis-global/menu/menu_config.json
+            - ./configs/openelis/branding:/var/lib/openelis-global/branding
+            - ./configs/openelis/nce-attachments2:/var/lib/openelis-global/nce-attachments  # NCE file attachments
         secrets:
             - source: common.properties
-            
+
     fhir2.openelis.org:
         container_name: external-fhir-api2
-        image: itechuw/openelis-global-2-fhir:3.2.1.3
+        image: itechuw/openelis-global-2-fhir:3.3.0
         platform: linux/amd64
-        # ports:
-        #     - "8081:8080"
-        #     - "8444:8443"
         depends_on:
-            - db2.openelis.org
-            - certs2    
+            db2.openelis.org:
+                condition: service_started
+            certs2:
+                condition: service_completed_successfully
         networks:
             - openelis-network2
         restart: always
         environment:
-        #   TZ: America/New_York
+          # UTC: the pipeline controller asks for resources updated since its last
+          # run in UTC, and this server stores update times in its own zone.
+          TZ: UTC
 
           JAVA_OPTS: "-Djavax.net.ssl.trustStore=${SSL_TRUSTSTORE_PATH}
                       -Djavax.net.ssl.trustStorePassword=${SSL_TRUSTSTORE_PASSWORD}
@@ -142,27 +156,43 @@ services:
             -  key_trust-store-volume2:/etc/openelis-global 
        
     frontend2.openelis.org:
-        image: itechuw/openelis-global-2-frontend:3.2.1.3
+        image: itechuw/openelis-global-2-frontend:3.3.0
         container_name: openelisglobal-front-end2
         platform: linux/amd64
+        restart: always
         networks:
             - openelis-network2
+        volumes:
+            # Translations this deployment supplies for itself, layered over the
+            # bundled ones per message id when OVERRIDE_DEFAULT_TRANSLATION is
+            # set in configs/properties/SystemConfiguration.properties. Served as
+            # /translation/<locale>.json; a locale with no file here keeps its
+            # shipped wording.
+            - ./configs/openelis/translation:/usr/share/nginx/html/translation:ro
         environment:
             - CHOKIDAR_USEPOLLING=true
         logging: *local-logging    
         tty: true
 
     proxy2:
-        image: itechuw/openelis-global-2-proxy:3.2.1.3
+        image: itechuw/openelis-global-2-proxy:3.3.0
         container_name: openelisglobal-proxy2
         platform: linux/amd64
         ports:
-            - 81:80
-            - 444:443
+            - "${OE2_HTTP_PORT:-81}:80"
+            - "${OE2_HTTPS_PORT:-444}:443"
+        environment:
+            - OE_NGINX_CERT=${OE_NGINX_CERT:-apache-selfsigned.crt}
+            - OE_NGINX_KEY=${OE_NGINX_KEY:-apache-selfsigned.key}
+            - OE_HTTPS_PORT=${OE2_HTTPS_PORT:-444}
+        command:
+            - /bin/sh
+            - -c
+            - "envsubst '$$OE_NGINX_CERT $$OE_NGINX_KEY $$OE_HTTPS_PORT' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf && exec nginx -g 'daemon off;'"
         volumes:
-            - certs-vol2:/etc/nginx/certs/
-            - keys-vol2:/etc/nginx/keys/
-            - ./configs/openelis/nginx/nginx2.conf:/etc/nginx/nginx.conf:ro
+            - ${OE_CERTS_PATH:-certs-vol2}:/etc/nginx/certs/
+            - ${OE_KEYS_PATH:-keys-vol2}:/etc/nginx/keys/
+            - ./configs/openelis/nginx/nginx2.conf:/etc/nginx/nginx.conf.template:ro
             # - /KEYSTORE_PASSWORD:/etc/nginx/private/key_pass
             # - /etc/openelis-global/nginx.cert.pem:/etc/nginx/certs/cert.crt
             # - /etc/openelis-global/nginx.key.pem:/etc/nginx/certs/cert.key
@@ -171,10 +201,8 @@ services:
             - openelis-network2
         logging: *local-logging    
         depends_on:
-            - frontend2.openelis.org 
-            - fhir2.openelis.org
-            - oe2.openelis.org
-   
+            - certs2
+
     autoheal2:
         container_name: autoheal-oe2
         image: willfarrell/autoheal:1.2.0
@@ -187,27 +215,32 @@ services:
             TZ: America/New_York
         logging: *local-logging    
         volumes:
-            - /var/run/docker.sock:/var/run/docker.sock  
-
-
-    #FHIR Pipeline
+            - /var/run/docker.sock:/var/run/docker.sock            
+            
+    # FHIR Data Pipes: copies this instance's FHIR resources to the SHR.
+    # Open the controller, run the full pipeline once; incremental runs follow.
     pipeline-controller2:
         image: us-docker.pkg.dev/cloud-build-fhir/fhir-analytics/main:0.6.0
         container_name: pipeline-controller2
         platform: linux/amd64
+        restart: unless-stopped
+        depends_on:
+            db2.openelis.org:
+                condition: service_healthy
         volumes:
            - ./configs/fhirpipes/config2:/app/config:ro
            - ./configs/fhirpipes/dwh2:/dwh
         environment:
-           - JAVA_OPTS=-Xms7g -Xmx7g
+           - JAVA_OPTS=-Xms${PIPELINE_HEAP:-2g} -Xmx${PIPELINE_HEAP:-2g}
         networks:
             - openelis-network2
             - shr-pipeline-network
         ports:
-           - '8096:8080'         
+           - '${PIPELINE2_PORT:-8096}:8080'
+
 secrets: 
   common.properties:
-    file:  ./configs/openelis/properties/common2.properties 
+    file:  ./configs/openelis/properties2/common.properties 
 
 networks:
   openelis-network2:
@@ -218,9 +251,10 @@ networks:
         - subnet: 172.30.1.0/24
   shr-pipeline-network:
     name: shr-pipeline-network
-    external: true  
+    external: true
         
 volumes:
+  db2-data:
   key_trust-store-volume2:
   certs-vol2:
   keys-vol2:

@@ -1,64 +1,66 @@
-# OpenELIS-Consolidated-Server
+# OpenELIS Consolidated Server
 
-## Instructions to run the OpenELIS Consolidated Server with Two Instances and a Central SHR
+Two OpenELIS Global 3.3.0 instances (labs OE-A and OE-B) that send their data to one central SHR
+(shared health record, a HAPI FHIR server) through [FHIR Data Pipes](https://github.com/google/fhir-data-pipes).
 
-### Prerequisites
+Guide: [Consolidated Server](https://uwdigi.atlassian.net/wiki/spaces/oeg/pages/1776943112)
 
-#### Create the External Docker Network
+| Part | File | Address |
+|---|---|---|
+| SHR (HAPI FHIR 5.5.1) | `docker-compose.yml` | <http://localhost:8090/fhir/> |
+| OpenELIS instance 1 (OE-A) | `docker-compose-OE1.yml` | <https://localhost> (`admin` : `adminADMIN!`) |
+| OpenELIS instance 2 (OE-B) | `docker-compose-OE2.yml` | <https://localhost:444> (`admin` : `adminADMIN!`) |
+| Pipeline controller, instance 1 | `docker-compose-OE1.yml` | <http://localhost:8095> |
+| Pipeline controller, instance 2 | `docker-compose-OE2.yml` | <http://localhost:8096> |
 
-Before starting any of the docker-compose services, you must create the external network that allows the pipeline controllers to communicate with the SHR FHIR server:
+Each OpenELIS instance is the openelis-docker 3.3.0 stack without the analyser Bridge, with its own
+database, keystores and configuration. Ports and passwords are in `.env`.
+
+## Start
 
 ```bash
-docker network create shr-pipeline-network
+docker compose up -d                              # SHR; creates the shr-pipeline-network
+docker compose -f docker-compose-OE1.yml up -d    # OpenELIS 1 and its pipeline controller
+docker compose -f docker-compose-OE2.yml up -d    # OpenELIS 2 and its pipeline controller
 ```
 
-This network enables communication between:
-- `shr-hapi-fhir` (SHR FHIR server from docker-compose.yml)
-- `pipeline-controller` (from docker-compose-OE1.yml)
-- `pipeline-controller2` (from docker-compose-OE2.yml)
+Docker warns about orphan containers because the three files share one project; that is expected.
 
-With the external network in place, the pipeline controllers can connect to the SHR FHIR server using the container name:
-- URL: `http://shr-hapi-fhir:8080/fhir/`
+Then, for each pipeline controller: open it and click **Run Full** once. Incremental runs then copy new and
+changed resources every 2 minutes (`incrementalSchedule` in `configs/fhirpipes/config*/application.yaml`).
 
-### Starting the Services
+If the controller then shows **Last run failed!** and its log has `HTTP 409 ... client-assigned ID constraint
+failure`, click **Run Full** again. OpenELIS gives a site's Organization and Location the same id; the first run
+creates both in the SHR at the same moment and the SHR refuses one of them. The second run finds the other one
+there and completes. An incremental run that hits it (a new site) is retried by the next one.
 
-1. Start the SHR (Shared Health Record) FHIR server:
-```bash
-docker compose up -d
-```
+## How it is wired
 
-it can be accesed at http://localhost:8090/fhir/
+- Each OpenELIS writes its orders, patients, samples and results as FHIR resources to its own FHIR server
+  (`org.openelisglobal.fhirstore.uri`), which stores them in the OpenELIS database.
+- Its pipeline controller reads them from that database (`fhirFetchMode: HAPI_JDBC`,
+  `configs/fhirpipes/config*/hapi-postgres-config_local.json`) and writes them to the SHR
+  (`sinkFhirServerUrl`).
+- `org.openelisglobal.facility.*` in `configs/openelis/properties*/common.properties` names each lab
+  (`OE-A` in Uganda, `OE-B` in Kenya). OpenELIS publishes it as an Organization with a `facility_id`
+  identifier, so the SHR can tell the labs apart.
 
-2. Start OpenELIS Instance 1:
-```bash
-docker compose -f docker-compose-OE1.yml up -d proxy
-```
+| Instance 1 | Instance 2 | Purpose |
+|---|---|---|
+| `configs/openelis/properties/` | `configs/openelis/properties2/` | `common.properties` (FHIR store, facility), `SystemConfiguration.properties` |
+| `configs/openelis/nginx/nginx.conf` | `configs/openelis/nginx/nginx2.conf` | Proxy |
+| `configs/openelis/database/data` | `configs/openelis/database/data2` | Database files |
+| `configs/fhirpipes/config` | `configs/fhirpipes/config2` | Pipeline: source database, SHR address, resource list, schedule |
 
-it can be accesed at https://localhost/
+`configs/openelis/configuration`, `menu`, `translation`, `branding` and `odoo` are shared by both instances.
 
-3. Start OpenELIS Instance 2:
-```bash
-docker compose -f docker-compose-OE2.yml up -d proxy2
-```
+## Upgrading from OpenELIS 3.2
 
-it can be accesed at https://localhost:444/
+Pull the new images and run the three `up -d` commands again. Each instance upgrades its database on
+start. The second instance's settings moved from `configs/openelis/properties/common2.properties` to
+`configs/openelis/properties2/common.properties`: copy any change you made there.
 
-### Start the Pipelines 
+## Resources
 
-4. Start Pipeline Instance 1 for Sending FHIR data from OpenELIS instance 1 to the SHR:
-```bash
-docker compose -f docker-compose-OE1.yml up -d pipeline-controller
-```
-it can be accesed at http://localhost:8095
-
-4. Start Pipeline Instance 2 for Sending FHIR data from OpenELIS instance 2 to the SHR:
-```bash
-docker compose -f docker-compose-OE2.yml up -d pipeline-controller2
-```
-
-it can be accesed at http://localhost:8096
-
-
-Note : To run the Pipeline , Acces the Pipeline Controller in the UI ,First run the Full Pipeline (Batch mode) and the Incremental Pipeline (Streaming Mode)will start by default 
-
-
+The pipeline controllers start with a 2 GB Java heap each (`PIPELINE_HEAP` in `.env`). The whole setup
+needs about 8 GB of memory for Docker.
