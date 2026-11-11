@@ -26,8 +26,13 @@ docker compose -f docker-compose-OE2.yml up -d    # OpenELIS 2 and its pipeline 
 
 Docker warns about orphan containers because the three files share one project; that is expected.
 
-Then, for each pipeline controller: open it and run the full pipeline (batch mode) once. Incremental runs then copy
-new and changed resources every 2 minutes (`incrementalSchedule` in `configs/fhirpipes/config*/application.yaml`).
+Then, for each pipeline controller: open it and click **Run Full** once. Incremental runs then copy new and
+changed resources every 2 minutes (`incrementalSchedule` in `configs/fhirpipes/config*/application.yaml`).
+
+If the controller then shows **Last run failed!** and its log has `HTTP 409 ... client-assigned ID constraint
+failure`, click **Run Full** again. OpenELIS gives a site's Organization and Location the same id; the first run
+creates both in the SHR at the same moment and the SHR refuses one of them. The second run finds the other one
+there and completes. An incremental run that hits it (a new site) is retried by the next one.
 
 ## How it is wired
 
