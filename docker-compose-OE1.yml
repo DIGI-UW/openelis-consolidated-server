@@ -133,7 +133,9 @@ services:
             - openelis-network
         restart: always
         environment:
-          TZ: America/New_York
+          # UTC: the pipeline controller asks for resources updated since its last
+          # run in UTC, and this server stores update times in its own zone.
+          TZ: UTC
 
           JAVA_OPTS: "-Djavax.net.ssl.trustStore=${SSL_TRUSTSTORE_PATH}
                       -Djavax.net.ssl.trustStorePassword=${SSL_TRUSTSTORE_PASSWORD}

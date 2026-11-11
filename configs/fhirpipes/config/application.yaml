@@ -36,7 +36,7 @@ fhirdata:
   # There is no Questionnaire in our test FHIR server, but it is added to
   # prevent regression of https://github.com/google/fhir-data-pipes/issues/785.
   # TODO: add resource table creation to e2e tests.
-  resourceList: "Patient,Practitioner,Encounter,Observation,Location,Organization,ServiceRequest,Specimen ,Task"
+  resourceList: "Patient,Practitioner,Encounter,Observation,Location,Organization,ServiceRequest,Specimen,Task"
   numThreads: 1
   autoGenerateFlinkConfiguration: true
   createHiveResourceTables: false
