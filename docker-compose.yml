@@ -1,13 +1,16 @@
 version: '3.6'
-services:       
-    # # Hapi-FHIR -  SHR
+# The SHR (shared health record): the central HAPI FHIR server the OpenELIS
+# instances send their data to. Start it first: it creates the
+# shr-pipeline-network the pipeline controllers join.
+services:
     shr-hapi-fhir:
         container_name: shr-hapi-fhir
         image: hapiproject/hapi:v5.5.1
         depends_on:
-            - shr-db
+            shr-db:
+                condition: service_healthy
         ports:
-            - "8090:8080"
+            - "${SHR_PORT:-8090}:8080"
         restart: always
         environment:
             - hapi.fhir.auto_create_placeholder_reference_targets=true
@@ -28,24 +31,24 @@ services:
         image: postgres:14.4
         container_name: hapi-fhir-db
         restart: always
-        ports:
-            - "5432:5432"
         environment:
             POSTGRES_DB: 'hapi'
             POSTGRES_USER: 'admin'
             POSTGRES_PASSWORD: 'admin'
+        healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U admin -d hapi"]
+            interval: 10s
+            timeout: 5s
+            retries: 10
         volumes:
             - hapi-fhir-db:/var/lib/postgresql/data
         networks:
             - shr-pipeline-network
+
 networks:
   shr-pipeline-network:
     name: shr-pipeline-network
-    external: true
 
 volumes:
-  key_trust-store-volume:
-  certs-vol:
-  keys-vol:
   hapi-data:
   hapi-fhir-db:
