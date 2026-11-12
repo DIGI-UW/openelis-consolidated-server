@@ -30,9 +30,10 @@ Then, for each pipeline controller: open it and click **Run Full** once. Increme
 changed resources every 2 minutes (`incrementalSchedule` in `configs/fhirpipes/config*/application.yaml`).
 
 If the controller then shows **Last run failed!** and its log has `HTTP 409 ... client-assigned ID constraint
-failure`, click **Run Full** again. OpenELIS gives a site's Organization and Location the same id; the first run
-creates both in the SHR at the same moment and the SHR refuses one of them. The second run finds the other one
-there and completes. An incremental run that hits it (a new site) is retried by the next one.
+failure`, click **Run Full** again. The pipelines for each resource type run in parallel and also write the
+resources they reference, so on an empty SHR two of them can create the same resource at the same moment (a
+patient and the results that point to it, or a site's Organization and Location, which share an id), and the SHR
+refuses one. The second run finds the resource there and completes. An incremental run that hits it (a new site) is retried by the next one.
 
 ## How it is wired
 
